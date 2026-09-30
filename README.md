@@ -52,9 +52,7 @@ Falls du (wie ich) **zwei Wechselrichter** im Einsatz hast, erstelle vorab einen
 
 ## 🚀 Installation
 
-Da dieses Repository öffentlich ist, kannst du die Blueprints über die folgenden Links direkt in deine Home Assistant Instanz importieren. 
-
-*Ersetze beim Klick einfach `DEIN_USERNAME` in der URL mit deinem GitHub-Namen:*
+Da dieses Repository öffentlich ist, kannst du die Blueprints über die folgenden Buttons direkt mit einem Klick in deine Home Assistant Instanz importieren:
 
 * **Blueprint 1 (Berechnung) importieren:**
   [![Blueprint Importieren](https://home-assistant.io)](https://home-assistant.io)
