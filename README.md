@@ -1,6 +1,3 @@
-# homeassistant-blueprints
-Theoretische PV-Leistungsberechnung und Warnung bei Leistungsabfall für Home Assistant.
-
 # Home Assistant Blueprints: Smartes PV-Leistungsmanagement ☀️⚡
 
 Dieses Repository enthält zwei aufeinander abgestimmte Blueprints, um die Leistung deiner Solaranlage (Photovoltaik) in Home Assistant intelligent zu überwachen.
