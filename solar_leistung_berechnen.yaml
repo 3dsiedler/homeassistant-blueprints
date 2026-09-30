@@ -1,1 +1,195 @@
+blueprint:
+  name: "Solarleistung periodisch + bei Strahlungsänderung"
+  description: "Berechnet die PV-Leistung im Intervall UND sofort bei einer starken Änderung der Einstrahlung."
+  domain: automation
+  
+  # HIER ERFOLGT DIE VERSIONIERUNG FÜR GITHUB:
+  source_url: https://githubusercontent.com
+
+  homeassistant:
+    min_version: "2024.4.0"
+    
+  input:
+    solar_wp:
+      name: "Gesamtleistung der Anlage (Wp)"
+      description: "Die installierte Peak-Leistung deiner Solarmodule (z.B. 2060)."
+      selector:
+        number:
+          min: 0
+          max: 100000
+          unit_of_measurement: "Wp"
+    calc_interval:
+      name: "Berechnungs-Intervall (Minuten)"
+      description: "Wie oft soll die Leistung tagsüber regulär berechnet werden? (z.B. alle 5 Minuten)"
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 59
+          unit_of_measurement: "min"
+    radiation_sensor:
+      name: "Einstrahlungssensor (W/m²)"
+      description: "Der Sensor deiner Wetterstation für die Globalstrahlung."
+      selector:
+        entity:
+          domain: sensor
+    radiation_threshold:
+      name: "Schwellenwert für Sofort-Trigger (W/m²)"
+      description: "Löst sofort eine Berechnung aus, wenn sich die Einstrahlung um mehr als diesen Wert ändert (z.B. 50 W/m²)."
+      default: 50
+      selector:
+        number:
+          min: 5
+          max: 500
+          unit_of_measurement: "W/m²"
+    sunrise_entity:
+      name: "Sonnenaufgang-Entität"
+      description: "Wähle den Sensor für den Sonnenaufgang (z.B. sensor.sun_sunrise)."
+      default: sensor.sun_sunrise
+      selector:
+        entity:
+          domain: sensor
+    sunrise_offset:
+      name: "Sonnenaufgang-Offset (Minuten)"
+      description: "Berechnung starten X Minuten vor (-) oder nach (+) Sonnenaufgang."
+      default: 0
+      selector:
+        number:
+          min: -120
+          max: 120
+          unit_of_measurement: "min"
+    sunset_entity:
+      name: "Sonnenuntergang-Entität"
+      description: "Wähle den Sensor für den Sonnenuntergang (z.B. sensor.sun_sunset)."
+      default: sensor.sun_sunset
+      selector:
+        entity:
+          domain: sensor
+    sunset_offset:
+      name: "Sonnenuntergang-Offset (Minuten)"
+      description: "Berechnung stoppen X Minuten vor (-) oder nach (+) Sonnenuntergang."
+      default: 0
+      selector:
+        number:
+          min: -120
+          max: 120
+          unit_of_measurement: "min"
+    loss_factor:
+      name: "Pauschaler Verlustfaktor"
+      description: "0.90 entspricht 10% Verlust durch Wechselrichter, Kabel, Verschmutzung etc."
+      default: 0.90
+      selector:
+        number:
+          min: 0.0
+          max: 1.0
+          step: 0.01
+    temp_sensor:
+      name: "Modultemperatur-Sensor (Optional)"
+      description: "Sensor für die Temperatur der Solarplatten. Kann frei gelassen werden."
+      default: none
+      selector:
+        entity:
+          domain: sensor
+    target_helper:
+      name: "Ziel-Helfer (Number)"
+      description: "Der Nummern-Helfer, in den das Ergebnis geschrieben werden soll."
+      selector:
+        entity:
+          domain: input_number
+
+mode: restart
+
+trigger:
+  - platform: time_pattern
+    minutes: "/1"
+    id: "zeit_trigger"
+  - platform: state
+    entity_id: !input radiation_sensor
+    id: "strahlungs_trigger"
+
+action:
+  - variables:
+      wp_gesamt: !input solar_wp
+      verlust_faktor: !input loss_factor
+      radiation_sensor: !input radiation_sensor
+      temp_sensor: !input temp_sensor
+      my_interval: !input calc_interval
+      schwellenwert: !input radiation_threshold
+      sunrise_sensor: !input sunrise_entity
+      sunset_sensor: !input sunset_entity
+      sr_offset: !input sunrise_offset
+      ss_offset: !input sunset_offset
+
+  - choose:
+      # FALL 1: Es ist Tag
+      - conditions:
+          - condition: template
+            value_template: >
+              {% set aufgang = as_datetime(states(sunrise_sensor)) %}
+              {% set untergang = as_datetime(states(sunset_sensor)) %}
+              {% if aufgang is not none and untergang is not none %}
+                {% set start_zeit = aufgang + timedelta(minutes=sr_offset) %}
+                {% set end_zeit = untergang + timedelta(minutes=ss_offset) %}
+                {{ start_zeit <= now() <= end_zeit }}
+              {% else %}
+                true
+              {% endif %}
+          - condition: template
+            value_template: "{{ has_value(radiation_sensor) }}"
+          - condition: or
+            conditions:
+              - condition: template
+                value_template: "{{ trigger.id == 'zeit_trigger' and (now().minute % my_interval | int) == 0 }}"
+              - condition: template
+                value_template: >
+                  {% if trigger.id == 'strahlungs_trigger' and trigger.from_state is not none and trigger.to_state is not none %}
+                    {% set alt = trigger.from_state.state | float(0) %}
+                    {% set neu = trigger.to_state.state | float(0) %}
+                    {{ (neu - alt) | abs >= schwellenwert | float }}
+                  {% else %}
+                    false
+                  {% endif %}
+        sequence:
+          - service: input_number.set_value
+            target:
+              entity_id: !input target_helper
+            data:
+              value: >
+                {% set einstrahlung = states(radiation_sensor) | float(0) %}
+                {% set temp_koeffizient = -0.0035 %}
+                
+                {% if temp_sensor is defined and temp_sensor != 'none' and temp_sensor != '' and has_value(temp_sensor) %}
+                  {% set t_modul = states(temp_sensor) | float(25) %}
+                {% else %}
+                  {% set t_modul = 25 %}
+                {% endif %}
+                
+                {% set basis_leistung = (wp_gesamt * einstrahlung) / 1000 %}
+                {% set temp_differenz = t_modul - 25 %}
+                {% set korrektur_faktor = 1 + (temp_differenz * temp_koeffizient) %}
+                {% set finale_leistung = basis_leistung * korrektur_faktor * verlust_faktor %}
+                
+                {{ [0, finale_leistung] | max | round(1) }}
+
+      # FALL 2: Es ist Nacht
+      - conditions:
+          - condition: template
+            value_template: >
+              {% set aufgang = as_datetime(states(sunrise_sensor)) %}
+              {% set untergang = as_datetime(states(sunset_sensor)) %}
+              {% if aufgang is not none and untergang is not none %}
+                {% set start_zeit = aufgang + timedelta(minutes=sr_offset) %}
+                {% set end_zeit = untergang + timedelta(minutes=ss_offset) %}
+                {{ now() < start_zeit or now() > end_zeit }}
+              {% else %}
+                false
+              {% endif %}
+          - condition: template
+            value_template: "{{ now().minute == 0 }}"
+        sequence:
+          - service: input_number.set_value
+            target:
+              entity_id: !input target_helper
+            data:
+              value: 0
 
