@@ -1,3 +1,10 @@
+# =========================================================================
+# Blueprint: Solaranlage: Warnung bei Leistungsabfall
+# Author:    [Udo Grun Name / GitHub-3dsiedler]
+# License:   MIT License
+# Copyright: (c) 2026 [Udo Grun]
+# =========================================================================
+
 blueprint:
   name: "Solaranlage: Warnung bei Leistungsabfall"
   description: "Vergleicht die reale PV-Leistung mit der theoretisch berechneten Leistung und sendet eine Warnung, wenn der Ertrag zu gering ist."
