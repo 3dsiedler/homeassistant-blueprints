@@ -1,1 +1,106 @@
+blueprint:
+  name: "Solaranlage: Warnung bei Leistungsabfall"
+  description: "Vergleicht die reale PV-Leistung mit der theoretisch berechneten Leistung und sendet eine Warnung, wenn der Ertrag zu gering ist."
+  domain: automation
+  
+  # HIER ERFOLGT DIE VERSIONIERUNG FÜR GITHUB:
+  # Ersetze USERNAME und REPO durch deine echten GitHub-Daten. 
+  # Sobald die Datei dort liegt, liest HA die Version direkt aus dieser URL aus.
+  source_url: https://githubusercontent.com
+
+  homeassistant:
+    min_version: "2024.4.0"
+
+  input:
+    real_power_sensor:
+      name: "Realer PV-Leistungssensor"
+      description: "Der Sensor (oder Summen-Helfer), der die aktuelle echte Leistung deiner Wechselrichter in Watt (W) anzeigt."
+      selector:
+        entity:
+          domain: sensor
+          device_class: power
+    theoretical_power_helper:
+      name: "Theoretischer Leistungs-Helfer"
+      description: "Der Nummern-Helfer (input_number) aus dem ersten Blueprint, der das berechnete Maximum enthält."
+      selector:
+        entity:
+          domain: input_number
+    min_theory_power:
+      name: "Mindestleistung für Prüfung (W)"
+      description: "Die Prüfung startet erst, wenn die theoretische Leistung diesen Wert überschreitet (verhindert Fehlalarme bei Wolken/Dämmerung)."
+      default: 300
+      selector:
+        number:
+          min: 50
+          max: 2000
+          unit_of_measurement: "W"
+    threshold_percent:
+      name: "Abweichungsschwelle (%)"
+      description: "Löst aus, wenn die reale Leistung unter diesen Prozentsatz des theoretischen Werts fällt (z.B. 70% bedeutet 30% Verlust)."
+      default: 70
+      selector:
+        number:
+          min: 10
+          max: 95
+          unit_of_measurement: "%"
+    duration_minutes:
+      name: "Verzögerung (Minuten)"
+      description: "Wie lange muss der Leistungsabfall anstehen, bevor die Benachrichtigung gesendet wird?"
+      default: 15
+      selector:
+        number:
+          min: 1
+          max: 60
+          unit_of_measurement: "min"
+    notify_device:
+      name: "Benachrichtigungs-Dienst"
+      description: "Wähle den Benachrichtigungsdienst aus (z.B. notify.notify für alle Geräte oder notify.mobile_app_dein_handy)."
+      default: notify.notify
+      selector:
+        text:
+
+# Variablen-Block für korrekte UI-Anzeige unter HA 2026.9
+variables:
+  real_sensor_var: !input real_power_sensor
+  theorie_var: !input theoretical_power_helper
+  min_theory_power_var: !input min_theory_power
+  threshold_percent_var: !input threshold_percent
+  notify_service_var: !input notify_device
+
+trigger:
+  - platform: state
+    entity_id: !input real_power_sensor
+  - platform: state
+    entity_id: !input theoretical_power_helper
+
+condition:
+  - condition: state
+    entity_id: sun.sun
+    state: "above_horizon"
+  - condition: template
+    value_template: >
+      {% set real = states(real_sensor_var) | float(0) %}
+      {% set theorie = states(theorie_var) | float(0) %}
+      {% set prozent = threshold_percent_var | float / 100 %}
+      {{ theorie >= min_theory_power_var | float and real < (theorie * prozent) }}
+
+action:
+  # Wartezeit (Verzögerung) einhalten
+  - delay:
+      minutes: !input duration_minutes
+
+  # Zweite Prüfung nach Ablauf der Wartezeit
+  - condition: template
+    value_template: >
+      {% set real = states(real_sensor_var) | float(0) %}
+      {% set theorie = states(theorie_var) | float(0) %}
+      {% set prozent = threshold_percent_var | float / 100 %}
+      {{ theorie >= min_theory_power_var | float and real < (theorie * prozent) }}
+
+  # Benachrichtigung absenden
+  - service: "{{ notify_service_var }}"
+    data:
+      title: "⚠️ PV-Leistungsabfall erkannt!"
+      message: >
+        Die reale Solarleistung ({{ states(real_sensor_var) | round(0) }} W) liegt deutlich unter dem berechneten Soll-Wert ({{ states(theorie_var) | round(0) }} W). Bitte überprüfe die Anlage auf Verschmutzung, Verschattung oder Defekte.
 
