@@ -1,3 +1,9 @@
+# =========================================================================
+# Blueprint: Solarleistung periodisch + bei Strahlungsänderung
+# Author:    [Udo Grun / GitHub-3dsiedler]
+# License:   MIT License
+# Copyright: (c) 2026 [Udo Grun]
+# =========================================================================
 blueprint:
   name: "Solarleistung periodisch + bei Strahlungsänderung"
   description: "Berechnet die PV-Leistung im Intervall UND sofort bei einer starken Änderung der Einstrahlung."
